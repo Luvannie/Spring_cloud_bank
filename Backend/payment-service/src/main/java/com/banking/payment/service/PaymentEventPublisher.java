@@ -45,4 +45,27 @@ public class PaymentEventPublisher {
                 }
             });
     }
+    
+    /**
+     * Publishes a payment expired event to trigger saga compensation.
+     */
+    public void publishPaymentExpired(Payment payment) {
+        Map<String, Object> event = Map.of(
+            "eventId", UUID.randomUUID().toString(),
+            "paymentId", payment.getId(),
+            "transactionId", payment.getTransactionId(),
+            "status", "EXPIRED",
+            "previousStatus", payment.getStatus(),
+            "timestamp", Instant.now()
+        );
+        
+        kafkaTemplate.send(TOPIC, payment.getTransactionId().toString(), event)
+            .whenComplete((result, ex) -> {
+                if (ex != null) {
+                    log.error("Failed to publish payment expired event: {}", payment.getId(), ex);
+                } else {
+                    log.info("Payment expired event published: {}", payment.getId());
+                }
+            });
+    }
 }

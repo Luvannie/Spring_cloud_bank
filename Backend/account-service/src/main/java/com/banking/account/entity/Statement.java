@@ -8,9 +8,10 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
-import lombok.Data;
 import lombok.EqualsAndHashCode;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.util.UUID;
@@ -21,13 +22,15 @@ import java.util.UUID;
  */
 @Entity
 @Table(name = "statements")
-@Data
-@EqualsAndHashCode(callSuper = true)
+@Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
+@EqualsAndHashCode(callSuper = true, onlyExplicitlyIncluded = true)
 public class Statement extends AuditableEntity {
     
+    @EqualsAndHashCode.Include
     @Column(name = "account_id", nullable = false)
     private UUID accountId;
     

@@ -2,6 +2,7 @@ package com.banking.auth.config;
 
 import com.banking.auth.entity.User;
 import com.banking.auth.repository.UserRepository;
+import com.banking.auth.service.AuthService;
 import com.banking.auth.service.JwtService;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -32,6 +33,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
     
     private final JwtService jwtService;
     private final UserRepository userRepository;
+    private final AuthService authService;
     
     @Override
     protected void doFilterInternal(HttpServletRequest request, 
@@ -44,16 +46,24 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             String token = authHeader.substring(7);
             
             try {
+                // Check if token is blacklisted (revoked)
+                if (authService.isTokenBlacklisted(token)) {
+                    log.debug("Token is blacklisted (revoked)");
+                    filterChain.doFilter(request, response);
+                    return;
+                }
+                
                 if (jwtService.validateToken(token)) {
                     UUID userId = jwtService.getUserIdFromToken(token);
                     Optional<User> userOpt = userRepository.findById(userId);
                     
                     if (userOpt.isPresent()) {
                         User user = userOpt.get();
+                        List<SimpleGrantedAuthority> authorities = jwtService.getRoles(token);
                         UserDetails userDetails = org.springframework.security.core.userdetails.User.builder()
                             .username(user.getUsername())
                             .password(user.getPasswordHash())
-                            .authorities(List.of(new SimpleGrantedAuthority("ROLE_USER")))
+                            .authorities(authorities)
                             .build();
                         
                         UsernamePasswordAuthenticationToken auth = 

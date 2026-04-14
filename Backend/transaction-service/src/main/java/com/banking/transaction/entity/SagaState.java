@@ -8,9 +8,10 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
-import lombok.Data;
 import lombok.EqualsAndHashCode;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.Setter;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -20,13 +21,15 @@ import java.util.UUID;
  */
 @Entity
 @Table(name = "saga_states")
-@Data
-@EqualsAndHashCode(callSuper = true)
+@Getter
+@Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
+@EqualsAndHashCode(callSuper = true, onlyExplicitlyIncluded = true)
 public class SagaState extends AuditableEntity {
     
+    @EqualsAndHashCode.Include
     @Column(name = "saga_id", nullable = false, unique = true)
     private UUID sagaId;
     
@@ -71,6 +74,8 @@ public class SagaState extends AuditableEntity {
         RUNNING,
         COMPLETED,
         FAILED,
-        COMPENSATING
+        COMPENSATING,
+        COMPENSATED,
+        COMPENSATION_FAILED
     }
 }

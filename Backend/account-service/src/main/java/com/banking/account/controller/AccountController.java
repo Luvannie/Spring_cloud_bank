@@ -9,7 +9,9 @@ import com.banking.account.entity.Account;
 import com.banking.account.entity.BalanceReservation;
 import com.banking.account.service.AccountService;
 import com.banking.account.service.BalanceService;
+import com.banking.auth.repository.UserRepository;
 import com.banking.common.dto.ApiResponse;
+import com.banking.common.exception.BankingException;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -39,17 +41,48 @@ public class AccountController {
     
     private final AccountService accountService;
     private final BalanceService balanceService;
+    private final UserRepository userRepository;
     
     /**
-     * Creates a new account.
+     * Gets account by ID with ownership verification.
      */
-    @PostMapping
-    @ResponseStatus(HttpStatus.CREATED)
-    public ApiResponse<AccountResponse> createAccount(
-            @Valid @RequestBody CreateAccountRequest request,
-            @AuthenticationPrincipal UserDetails user) {
-        Account account = accountService.createAccount(request, user.getUsername());
+    @GetMapping("/{id}")
+    public ApiResponse<AccountResponse> getAccount(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal UserDetails userDetails) {
+        Account account = accountService.getAccount(id);
+        verifyAccountOwnership(account, userDetails);
         return ApiResponse.success(AccountResponse.from(account));
+    }
+    
+    /**
+     * Gets account balance with ownership verification.
+     */
+    @GetMapping("/{id}/balance")
+    public ApiResponse<BalanceResponse> getBalance(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal UserDetails userDetails) {
+        Account account = accountService.getBalance(id);
+        verifyAccountOwnership(account, userDetails);
+        return ApiResponse.success(BalanceResponse.builder()
+            .accountId(account.getId())
+            .balance(account.getBalance())
+            .reservedBalance(account.getReservedBalance())
+            .availableBalance(account.getAvailableBalance())
+            .currency(account.getCurrency())
+            .build());
+    }
+    
+    /**
+     * Verifies that the current user owns the account.
+     */
+    private void verifyAccountOwnership(Account account, UserDetails userDetails) {
+        userRepository.findByUsername(userDetails.getUsername())
+            .ifPresent(user -> {
+                if (!account.getUserId().equals(user.getId())) {
+                    throw new BankingException("ACCESS_DENIED", "You don't have access to this account");
+                }
+            });
     }
     
     /**

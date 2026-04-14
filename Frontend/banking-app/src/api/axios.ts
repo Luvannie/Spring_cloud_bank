@@ -1,18 +1,24 @@
 import axios from 'axios'
+import { getAccessToken, clearTokens } from '@/utils/tokenStorage'
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api'
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
+
+// Custom event for forced logout (works with React Router)
+export const FORCE_LOGOUT_EVENT = 'banking:forceLogout'
 
 export const axiosInstance = axios.create({
   baseURL: API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },
+  timeout: 30000, // 30 second timeout
+  timeoutErrorMessage: 'Request timed out. Please try again.',
 })
 
 // Request interceptor - add auth token
 axiosInstance.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('accessToken')
+  async (config) => {
+    const token = await getAccessToken()
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
     }
@@ -39,19 +45,26 @@ axiosInstance.interceptors.response.use(
           })
 
           const { accessToken } = response.data
-          localStorage.setItem('accessToken', accessToken)
+          // Re-encrypt the new tokens
+          const { setTokens } = await import('@/utils/tokenStorage')
+          await setTokens(accessToken, refreshToken)
 
           originalRequest.headers.Authorization = `Bearer ${accessToken}`
           return axiosInstance(originalRequest)
         }
       } catch {
-        // Refresh failed - logout
-        localStorage.removeItem('accessToken')
-        localStorage.removeItem('refreshToken')
-        window.location.href = '/login'
+        // Refresh failed - dispatch logout event instead of window.location
+        clearTokens()
+        window.dispatchEvent(new CustomEvent(FORCE_LOGOUT_EVENT))
       }
     }
 
     return Promise.reject(error)
   }
 )
+
+// Helper to trigger logout from outside interceptors
+export function triggerForceLogout() {
+  clearTokens()
+  window.dispatchEvent(new CustomEvent(FORCE_LOGOUT_EVENT))
+}

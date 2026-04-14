@@ -10,7 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.util.Random;
+import java.security.SecureRandom;
 import java.util.UUID;
 
 /**
@@ -87,9 +87,17 @@ public class AccountService {
     }
     
     /**
-     * Generates unique account number.
+     * Generates unique account number using cryptographically secure random.
      */
     private String generateAccountNumber() {
-        return "ACC" + System.currentTimeMillis() + String.format("%04d", new Random().nextInt(10000));
+        SecureRandom secureRandom = new SecureRandom();
+        byte[] bytes = new byte[8];
+        secureRandom.nextBytes(bytes);
+        
+        // Format: ACC + 16 alphanumeric characters
+        String randomPart = new java.math.BigInteger(1, bytes).toString(36).toUpperCase();
+        randomPart = String.format("%016s", randomPart).replace(' ', 'X');
+        
+        return "ACC" + randomPart;
     }
 }

@@ -7,6 +7,7 @@ import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -16,6 +17,7 @@ import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 
 /**
  * Service for JWT token operations including generation, validation, and parsing.
@@ -28,6 +30,8 @@ public class JwtService {
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     
+    private static final int MIN_SECRET_LENGTH = 32;
+    
     @Value("${jwt.secret}")
     private String jwtSecret;
     
@@ -36,6 +40,16 @@ public class JwtService {
     
     @Value("${jwt.refresh-token-expiration}")
     private Long refreshTokenExpiration;
+    
+    @PostConstruct
+    public void validateJwtSecret() {
+        if (jwtSecret == null || jwtSecret.length() < MIN_SECRET_LENGTH) {
+            throw new IllegalStateException(
+                String.format("JWT secret must be at least %d characters for HS256. Current length: %d",
+                    MIN_SECRET_LENGTH, jwtSecret != null ? jwtSecret.length() : 0));
+        }
+        log.info("JWT secret validation passed");
+    }
     
     /**
      * Generates an access token for the given user.
@@ -106,10 +120,25 @@ public class JwtService {
     }
     
     /**
+     * Extracts roles from JWT token claims.
+     */
+    @SuppressWarnings("unchecked")
+    public List<SimpleGrantedAuthority> getRoles(String token) {
+        Claims claims = getClaims(token);
+        List<String> roles = claims.get("roles", List.class);
+        if (roles == null) {
+            return List.of();
+        }
+        return roles.stream()
+            .map(role -> new SimpleGrantedAuthority(role))
+            .toList();
+    }
+    
+    /**
      * Retrieves user roles from the database.
      */
     private List<String> getUserRoles(UUID userId) {
-        return roleRepository.findByEnabled(true)
+        return roleRepository.findByUserId(userId)
             .stream()
             .map(role -> "ROLE_" + role.getName().toUpperCase())
             .toList();

@@ -266,8 +266,86 @@ public class TransferSaga {
      */
     private void compensate(UUID sagaId, TransferRequest request) {
         log.info("Executing compensation for saga: {}", sagaId);
-        // Execute compensation actions in reverse order
-        // This would call accountService.rollbackReservation, paymentService.cancelPayment, etc.
+        
+        SagaState sagaState = sagaStateRepository.findBySagaId(sagaId)
+            .orElseThrow(() -> new com.banking.common.exception.BankingException(
+                "SAGA_NOT_FOUND", "Saga not found"));
+        
+        // Parse completed steps from JSON
+        List<Map<String, Object>> completedSteps = parseStepsCompleted(sagaState.getStepsCompleted());
+        
+        // Execute compensation in REVERSE order
+        for (int i = completedSteps.size() - 1; i >= 0; i--) {
+            Map<String, Object> step = completedSteps.get(i);
+            String stepName = (String) step.get("stepName");
+            
+            try {
+                executeCompensation(stepName, request);
+                log.info("Compensation successful for step: {} in saga: {}", stepName, sagaId);
+            } catch (Exception e) {
+                log.error("Compensation failed for step: {} in saga: {}", stepName, sagaId, e);
+                // Mark saga as requiring manual intervention
+                sagaState.setStatus(SagaState.SagaStatus.COMPENSATION_FAILED);
+                sagaState.setLastError("Compensation failed for step " + stepName + ": " + e.getMessage());
+                sagaStateRepository.save(sagaState);
+                return;
+            }
+        }
+        
+        sagaState.setStatus(SagaState.SagaStatus.COMPENSATED);
+        sagaStateRepository.save(sagaState);
+        log.info("Compensation completed for saga: {}", sagaId);
+    }
+    
+    /**
+     * Parse completed steps from JSON string.
+     */
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> parseStepsCompleted(String stepsJson) {
+        try {
+            return objectMapper.readValue(stepsJson, 
+                new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, Object>>>() {});
+        } catch (Exception e) {
+            log.error("Failed to parse steps completed", e);
+            return List.of();
+        }
+    }
+    
+    /**
+     * Execute compensation for a specific step.
+     */
+    private void executeCompensation(String stepName, TransferRequest request) {
+        switch (stepName) {
+            case "RESERVE_BALANCE" -> {
+                // Rollback the balance reservation
+                log.info("Compensating RESERVE_BALANCE - releasing reserved balance");
+                accountService.rollbackReservation(
+                    request.getSourceAccountId(), 
+                    request.getTransactionId());
+            }
+            case "CREATE_PAYMENT_LINK", "WAIT_FOR_PAYMENT" -> {
+                // Cancel the payment
+                log.info("Compensating {} - canceling payment", stepName);
+                paymentService.cancelPayment(request.getTransactionId());
+            }
+            case "CONFIRM_TRANSFER" -> {
+                // For confirmed transfers, this may require manual review
+                log.warn("CONFIRM_TRANSFER compensation may require manual intervention for transaction: {}", 
+                    request.getTransactionId());
+                // In production, this would trigger an alert for manual reconciliation
+            }
+            case "SEND_NOTIFICATIONS" -> {
+                // Notification compensation usually not needed
+                log.debug("No compensation needed for SEND_NOTIFICATIONS step");
+            }
+        }
+    }
+    
+    /**
+     * Marks a transaction as failed with error message.
+     */
+    private void markFailed(UUID transactionId, String errorMessage) {
+        transactionService.markFailed(transactionId, errorMessage);
     }
     
     /**
@@ -303,7 +381,10 @@ public class TransferSaga {
                 state.getStepsCompleted(),
                 new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, Object>>>() {}
             );
-            steps.add(Map.of("step", step.getStepNumber(), "status", status));
+            steps.add(Map.of(
+                "step", step.getStepNumber(), 
+                "stepName", step.getStepName(),
+                "status", status));
             state.setStepsCompleted(objectMapper.writeValueAsString(steps));
         } catch (Exception e) {
             log.error("Failed to update steps completed", e);

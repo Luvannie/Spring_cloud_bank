@@ -44,14 +44,25 @@ public class BalanceService {
             throw new BankingException("ACCOUNT_NOT_ACTIVE", "Account is not active");
         }
         
+        // Check daily transfer limit
+        BigDecimal remainingLimit = account.getDailyTransferLimit()
+            .subtract(account.getDailyTransferUsed());
+        
+        if (amount.compareTo(remainingLimit) > 0) {
+            throw new BankingException("DAILY_LIMIT_EXCEEDED",
+                String.format("Daily limit exceeded. Remaining: %s, Requested: %s",
+                    remainingLimit, amount));
+        }
+        
         BigDecimal available = account.getAvailableBalance();
         if (available.compareTo(amount) < 0) {
-            throw new BankingException("INSUFFICIENT_BALANCE", 
+            throw new BankingException("INSUFFICIENT_BALANCE",
                 String.format("Insufficient balance. Available: %s, Required: %s", available, amount));
         }
         
         // Reserve balance
         account.setReservedBalance(account.getReservedBalance().add(amount));
+        account.setDailyTransferUsed(account.getDailyTransferUsed().add(amount));
         accountRepository.save(account);
         
         // Create reservation record
@@ -88,6 +99,12 @@ public class BalanceService {
         Account account = accountRepository.findByIdWithLock(reservation.getAccountId())
             .orElseThrow(() -> new BankingException("ACCOUNT_NOT_FOUND", "Account not found"));
         
+        // Check account status before committing
+        if (account.getStatus() != Account.AccountStatus.ACTIVE) {
+            throw new BankingException("ACCOUNT_NOT_ACTIVE",
+                "Cannot commit on account with status: " + account.getStatus());
+        }
+        
         // Move from reserved to actual balance deduction
         account.setReservedBalance(account.getReservedBalance().subtract(reservation.getAmount()));
         account.setBalance(account.getBalance().subtract(reservation.getAmount()));
@@ -99,7 +116,7 @@ public class BalanceService {
         
         // Create statement
         statementService.createStatement(account.getId(), reservation.getTransactionId(),
-            Statement.StatementType.DEBIT, reservation.getAmount(), 
+            Statement.StatementType.DEBIT, reservation.getAmount(),
             account.getBalance(), "Transfer committed");
         
         log.info("Committed reservation: {} for account: {}", reservationId, account.getId());
@@ -120,8 +137,16 @@ public class BalanceService {
         Account account = accountRepository.findByIdWithLock(reservation.getAccountId())
             .orElseThrow(() -> new BankingException("ACCOUNT_NOT_FOUND", "Account not found"));
         
+        // Check account status before rolling back
+        if (account.getStatus() != Account.AccountStatus.ACTIVE) {
+            log.warn("Rolling back reservation {} on non-active account: {}",
+                reservationId, account.getStatus());
+        }
+        
         // Release reserved balance
         account.setReservedBalance(account.getReservedBalance().subtract(reservation.getAmount()));
+        // Restore daily transfer used
+        account.setDailyTransferUsed(account.getDailyTransferUsed().subtract(reservation.getAmount()));
         accountRepository.save(account);
         
         // Update reservation status
@@ -130,7 +155,7 @@ public class BalanceService {
         
         // Create statement
         statementService.createStatement(account.getId(), reservation.getTransactionId(),
-            Statement.StatementType.RELEASE, reservation.getAmount(), 
+            Statement.StatementType.RELEASE, reservation.getAmount(),
             account.getBalance(), "Balance released");
         
         log.info("Rolled back reservation: {} for account: {}", reservationId, account.getId());

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Button, Card, CardContent, Spinner, Alert } from '@/components/common'
 import { AccountCard } from '@/components/banking'
 import { useAccounts } from '@/hooks'
+import { useAuth } from '@/context/AuthContext'
 import { Plus, Lock, Unlock } from 'lucide-react'
 import type { Account, CreateAccountRequest } from '@/types'
 
@@ -167,23 +168,26 @@ export function AccountsPage() {
 }
 
 // Simple Create Account Modal Component
-function CreateAccountModal({ 
-  onClose, 
-  onSubmit, 
-  isLoading 
-}: { 
+function CreateAccountModal({
+  onClose,
+  onSubmit,
+  isLoading
+}: {
   onClose: () => void
   onSubmit: (data: CreateAccountRequest) => void
-  isLoading: boolean 
+  isLoading: boolean
 }) {
+  const { user } = useAuth()
   const [accountType, setAccountType] = useState<'CHECKING' | 'SAVINGS' | 'BUSINESS'>('CHECKING')
   const [currency, setCurrency] = useState<'VND' | 'USD' | 'EUR'>('VND')
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    // For demo, using a placeholder userId - in real app, get from auth context
+    if (!user) {
+      throw new Error('User not authenticated')
+    }
     onSubmit({
-      userId: '00000000-0000-0000-0000-000000000001',
+      userId: user.id,
       accountType,
       currency,
     })

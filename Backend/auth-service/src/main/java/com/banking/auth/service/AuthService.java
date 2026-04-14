@@ -14,12 +14,15 @@ import com.banking.common.exception.BankingException;
 import io.jsonwebtoken.Claims;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Date;
 import java.util.UUID;
 
 /**
@@ -35,9 +38,17 @@ public class AuthService {
     private final JwtService jwtService;
     private final PasswordEncoder passwordEncoder;
     private final AuthEventPublisher eventPublisher;
+    private final RedisTemplate<String, String> redisTemplate;
     
+    private static final String TOKEN_BLACKLIST_PREFIX = "blacklist:";
     private static final long ACCESS_TOKEN_EXPIRY_SECONDS = 900L; // 15 minutes
     private static final long REFRESH_TOKEN_EXPIRY_DAYS = 7L;
+    
+    @Value("${security.max-login-attempts:5}")
+    private int maxLoginAttempts;
+    
+    @Value("${security.lockout-duration-minutes:15}")
+    private int lockoutDurationMinutes;
     
     /**
      * Authenticates a user and returns login response with tokens.
@@ -60,10 +71,16 @@ public class AuthService {
             throw new BankingException("INVALID_CREDENTIALS", "Invalid username or password");
         }
         
-        // Reset failed login attempts
+        // Reset failed login attempts and unlock account
         user.setFailedLoginAttempts(0);
         user.setLockedUntil(null);
         user.setLastLoginAt(Instant.now());
+        
+        // Reset status from LOCKED to ACTIVE if account was locked
+        if (user.getStatus() == User.UserStatus.LOCKED) {
+            user.setStatus(User.UserStatus.ACTIVE);
+        }
+        
         userRepository.save(user);
         
         // Generate tokens
@@ -89,6 +106,7 @@ public class AuthService {
     
     /**
      * Refreshes access token using a valid refresh token.
+     * Implements refresh token rotation - old token is invalidated after use.
      */
     @Transactional
     public LoginResponse refreshToken(RefreshTokenRequest request) {
@@ -109,12 +127,12 @@ public class AuthService {
         User user = userRepository.findById(userId)
             .orElseThrow(() -> new BankingException("USER_NOT_FOUND", "User not found"));
         
-        // Generate new tokens
+        // Rotate refresh token - invalidate old one and create new session
         String newAccessToken = jwtService.generateAccessToken(user);
         String newRefreshToken = jwtService.generateRefreshToken(user);
         
-        // Update session with new refresh token
-        updateSession(user.getId(), newRefreshToken);
+        // Rotate: revoke old session and create new one
+        rotateRefreshToken(userId, refreshToken, newRefreshToken);
         
         return LoginResponse.builder()
             .accessToken(newAccessToken)
@@ -126,15 +144,76 @@ public class AuthService {
     }
     
     /**
-     * Logs out a user by revoking all their sessions.
+     * Rotates refresh token by revoking the old session and creating a new one.
+     * This prevents token reuse attacks.
+     */
+    private void rotateRefreshToken(UUID userId, String oldRefreshToken, String newRefreshToken) {
+        Session session = sessionRepository.findByRefreshToken(oldRefreshToken)
+            .orElseThrow(() -> new BankingException("INVALID_TOKEN", "Invalid refresh token"));
+        
+        // Verify it belongs to this user
+        if (!session.getUserId().equals(userId)) {
+            throw new BankingException("INVALID_TOKEN", "Token does not belong to user");
+        }
+        
+        // Verify not already revoked
+        if (session.getRevoked()) {
+            throw new BankingException("INVALID_TOKEN", "Refresh token already revoked");
+        }
+        
+        // Invalidate old session
+        session.setRevoked(true);
+        sessionRepository.save(session);
+        
+        // Create new session with new refresh token
+        Session newSession = Session.builder()
+            .userId(userId)
+            .sessionId(UUID.randomUUID().toString())
+            .refreshToken(newRefreshToken)
+            .expiresAt(Instant.now().plus(Duration.ofDays(REFRESH_TOKEN_EXPIRY_DAYS)))
+            .createdAt(Instant.now())
+            .revoked(false)
+            .build();
+        
+        sessionRepository.save(newSession);
+        log.debug("Refresh token rotated for user: {}", userId);
+    }
+    
+    /**
+     * Logs out a user by revoking all their sessions and blacklisting the access token.
      */
     @Transactional
     public void logout(String accessToken) {
         Claims claims = jwtService.getClaims(accessToken);
         UUID userId = UUID.fromString(claims.getSubject());
         
+        // Add token to blacklist with TTL = remaining token lifetime
+        addTokenToBlacklist(accessToken, claims);
+        
+        // Revoke all user sessions
         sessionRepository.revokeAllUserSessions(userId);
         log.info("User logged out: {}", userId);
+    }
+    
+    /**
+     * Adds a token to the Redis blacklist with appropriate TTL.
+     */
+    private void addTokenToBlacklist(String token, Claims claims) {
+        Date expiration = claims.getExpiration();
+        long ttlSeconds = (expiration.getTime() - System.currentTimeMillis()) / 1000;
+        
+        if (ttlSeconds > 0) {
+            String blacklistKey = TOKEN_BLACKLIST_PREFIX + token;
+            redisTemplate.opsForValue().set(blacklistKey, "revoked", Duration.ofSeconds(ttlSeconds));
+            log.debug("Token added to blacklist with TTL: {} seconds", ttlSeconds);
+        }
+    }
+    
+    /**
+     * Checks if a token has been revoked (blacklisted).
+     */
+    public boolean isTokenBlacklisted(String token) {
+        return Boolean.TRUE.equals(redisTemplate.hasKey(TOKEN_BLACKLIST_PREFIX + token));
     }
     
     /**
@@ -179,10 +258,11 @@ public class AuthService {
         int attempts = user.getFailedLoginAttempts() != null ? user.getFailedLoginAttempts() + 1 : 1;
         user.setFailedLoginAttempts(attempts);
         
-        // Lock account after 5 failed attempts for 15 minutes
-        if (attempts >= 5) {
-            user.setLockedUntil(Instant.now().plus(Duration.ofMinutes(15)));
-            log.warn("Account locked due to failed login attempts: {}", user.getUsername());
+        // Lock account after max failed attempts for configured duration
+        if (attempts >= maxLoginAttempts) {
+            user.setLockedUntil(Instant.now().plus(Duration.ofMinutes(lockoutDurationMinutes)));
+            user.setStatus(User.UserStatus.LOCKED);
+            log.warn("Account locked due to {} failed login attempts: {}", attempts, user.getUsername());
         }
         
         userRepository.save(user);
