@@ -1,0 +1,55 @@
+# =============================================================================
+# Docker Ignore - Exclude unnecessary files from build context
+# =============================================================================
+
+# Git
+.git
+.gitignore
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+
+# Build outputs (we rebuild in Docker)
+**/target/
+**/build/
+
+# Logs
+*.log
+logs/
+
+# Temp files
+.tmp/
+*.tmp
+*.swp
+*~
+
+# Environment files (secrets)
+.env
+.env.*
+.env.local
+*.keystore
+*.jks
+credentials.json
+
+# Documentation (not needed in container)
+**/*.md
+!README.md
+ARCHITECTURE.md
+SESSION_SUMMARY.md
+
+# OpenCode
+.opencode/
+
+# Docker files (we have Dockerfiles in each service)
+docker-compose*.yml
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Node modules (for backend, not needed)
+node_modules/
