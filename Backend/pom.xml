@@ -41,7 +41,7 @@
         
         <!-- Security -->
         <spring-security.version>6.2.0</spring-security.version>
-        <jjwt.version>0.12.3</jjwt.version>
+        <jjwt.version>0.13.0</jjwt.version>
         
         <!-- API Documentation -->
         <springdoc.version>2.3.0</springdoc.version>
