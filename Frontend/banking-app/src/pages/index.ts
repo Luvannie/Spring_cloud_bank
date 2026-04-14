@@ -1,0 +1,5 @@
+export { LoginPage } from './LoginPage'
+export { DashboardPage } from './DashboardPage'
+export { AccountsPage } from './AccountsPage'
+export { TransfersPage } from './TransfersPage'
+export { PaymentsPage } from './PaymentsPage'

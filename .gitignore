@@ -1,0 +1,55 @@
+# =============================================================================
+# Banking System - Git Ignore
+# =============================================================================
+
+# Keep these folders
+!/Backend/
+!/Frontend/
+
+# Backend (Java/Maven)
+Backend/**/target/
+Backend/**/*.class
+Backend/**/src/test/
+Backend/**/.mvn/
+
+# Frontend (Node/npm)
+Frontend/banking-app/node_modules/
+Frontend/banking-app/dist/
+Frontend/banking-app/.env
+Frontend/banking-app/.env.local
+Frontend/banking-app/*.log
+Frontend/banking-app/.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+.DS_Store
+
+# Logs
+*.log
+logs/
+
+# Temp files
+.tmp/
+*.tmp
+*.swp
+*~
+
+# Environment files (contain secrets)
+.env
+.env.*
+*.env
+*.keystore
+*.jks
+credentials.json
+
+# Build artifacts
+dist/
+build/
+target/*.jar
+
+# OS files
+Thumbs.db
