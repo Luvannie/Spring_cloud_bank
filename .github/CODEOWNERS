@@ -1,0 +1,13 @@
+# Code Owners
+
+# Default code owner for all files
+* @open-agent-maintainers
+
+# Backend services
+Backend/** @open-agent-maintainers @backend-team
+
+# Frontend
+Frontend/** @open-agent-maintainers @frontend-team
+
+# CI/CD
+.github/workflows/* @open-agent-maintainers @devops-team

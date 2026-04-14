@@ -1,0 +1,44 @@
+version: 2
+
+updates:
+  # Enable GitHub Actions version updates
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+
+  # Maven dependencies (Backend)
+  - package-ecosystem: "maven"
+    directory: "/Backend"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "java"
+    groups:
+      spring:
+        patterns:
+          - "org.springframework.boot*"
+          - "org.springframework.cloud*"
+      test:
+        patterns:
+          - "org.junit*"
+          - "org.mockito*"
+          - "org.assertj*"
+
+  # npm dependencies (Frontend)
+  - package-ecosystem: "npm"
+    directory: "/Frontend/banking-app"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "javascript"
+    groups:
+      react:
+        patterns:
+          - "react*"
+          - "@types/react*"

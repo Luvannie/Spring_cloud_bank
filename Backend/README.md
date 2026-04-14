@@ -2,19 +2,21 @@
 
 A Spring Cloud-based microservices banking platform with ACID compliance, Saga pattern for distributed transactions, and PayOS payment gateway integration.
 
-**Status:** ✅ Building | ✅ 93 Tests Passing
+**Status:** ✅ Building | ✅ 93 Tests Passing | ✅ Security Review Complete (8/10)
 
 ---
 
 ## Features
 
 - **Multi-Service Architecture** - 5 core microservices + infrastructure services
-- **ACID Transactions** - PostgreSQL with optimistic locking
-- **Saga Pattern** - Orchestration-based distributed transactions for inter-bank transfers
+- **ACID Transactions** - PostgreSQL with pessimistic locking for financial operations
+- **Saga Pattern** - Orchestration-based distributed transactions for inter-bank transfers with compensation
 - **PayOS Integration** - Payment link generation, QR codes, webhooks
-- **JWT Authentication** - Secure API access with Redis-backed sessions
+- **JWT Authentication** - Secure API access with Redis-backed token blacklist
+- **Refresh Token Rotation** - Old tokens invalidated after use to prevent token reuse attacks
 - **Event-Driven** - Kafka-based asynchronous communication between services
 - **Real-Time Notifications** - Email, SMS, Push notifications
+- **Token Encryption** - AES-256 encryption for tokens stored in browser localStorage
 
 ---
 
@@ -56,24 +58,66 @@ A Spring Cloud-based microservices banking platform with ACID compliance, Saga p
 
 ## Tech Stack
 
-- **Framework:** Spring Boot 3.x, Spring Cloud
-- **Database:** PostgreSQL 15+, Redis
+- **Framework:** Spring Boot 3.2, Spring Cloud 2023.0
+- **Database:** PostgreSQL 15+ with JPA/Hibernate
 - **Messaging:** Apache Kafka
-- **Security:** Spring Security, JWT (jjwt), Keycloak
-- **API Documentation:** OpenAPI/Swagger
+- **Security:** Spring Security, JWT (jjwt), Redis token blacklist
+- **API Documentation:** OpenAPI/Swagger (springdoc)
 - **Resiliency:** Resilience4j (Circuit Breaker, Retry)
 - **Build:** Maven
 - **Testing:** JUnit 5, Mockito, AssertJ
 
 ---
 
+## 🚢 Deployment
+
+### Docker Compose (Recommended for Development)
+
+```bash
+# From project root
+cd ..
+docker-compose -f docker-compose.dev.yml up --build
+
+# Access services at:
+# - Frontend: http://localhost:3000
+# - API Gateway: http://localhost:8080
+# - Auth Service: http://localhost:8081
+```
+
+See [docker-compose.dev.yml](../docker-compose.dev.yml) for full service configuration.
+
+### Manual Deployment
+
+1. Ensure infrastructure is running:
+   ```bash
+   docker-compose -f docker-compose.yml up -d
+   ```
+
+2. Build all services:
+   ```bash
+   mvn clean package -DskipTests
+   ```
+
+3. Start services in order:
+   ```bash
+   mvn spring-boot:run -pl auth-service
+   mvn spring-boot:run -pl account-service
+   mvn spring-boot:run -pl transaction-service
+   mvn spring-boot:run -pl payment-service
+   mvn spring-boot:run -pl notification-service
+   mvn spring-boot:run -pl api-gateway
+   ```
+
+---
+
 ## Prerequisites
 
 - Java 17+
-- Maven 3.8+
+- Maven 3.9+
 - PostgreSQL 15+
 - Redis 7+
-- Kafka 3.x
+- Kafka 3.x (with Zookeeper)
+- Docker (for containerized deployment)
 - PayOS API credentials (for payment-service)
 
 ---
@@ -346,6 +390,19 @@ config-server/src/main/resources/
 
 ## Troubleshooting
 
+### Docker Deployment Issues
+
+```bash
+# Check if containers are running
+docker-compose -f ../docker-compose.dev.yml ps
+
+# View logs for specific service
+docker-compose -f ../docker-compose.dev.yml logs auth-service
+
+# Rebuild specific service
+docker-compose -f ../docker-compose.dev.yml up --build auth-service
+```
+
 ### Build Failures
 
 ```bash
@@ -368,10 +425,31 @@ mvn clean install -pl '!payment-service'
 
 ### Database Connection Issues
 
-Ensure PostgreSQL is running and credentials match `application.yml`:
+```bash
+# Check PostgreSQL is running
+docker-compose -f ../docker-compose.dev.yml logs postgres
+
+# Connect to database
+psql -h localhost -U banking_user -d banking_system
+```
+
+### Redis Connection Issues
 
 ```bash
-psql -h localhost -U banking_user -d banking
+# Test Redis connection
+redis-cli -a redis_secure_password ping
+
+# Check Redis logs
+docker-compose -f ../docker-compose.dev.yml logs redis
+```
+
+### Kafka Issues
+
+```bash
+# Check Kafka is healthy
+docker-compose -f ../docker-compose.dev.yml logs kafka
+
+# Access Kafka UI at http://localhost:8090 to view topics and messages
 ```
 
 ---
