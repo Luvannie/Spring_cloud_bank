@@ -223,12 +223,10 @@ public class AuthService {
     public UserResponse register(RegisterRequest request) {
         log.info("Registration attempt for username: {}", request.getUsername());
         
-        if (userRepository.existsByUsername(request.getUsername())) {
-            throw new BankingException("USERNAME_EXISTS", "Username already taken");
-        }
-        
-        if (userRepository.existsByEmail(request.getEmail())) {
-            throw new BankingException("EMAIL_EXISTS", "Email already registered");
+        // Prevent username/email enumeration by using same error for both
+        if (userRepository.existsByUsername(request.getUsername()) || 
+            userRepository.existsByEmail(request.getEmail())) {
+            throw new BankingException("REGISTRATION_FAILED", "Registration failed. Please try again.");
         }
         
         User user = User.builder()

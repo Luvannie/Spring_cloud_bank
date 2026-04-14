@@ -45,12 +45,13 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
     List<Account> findByStatus(Account.AccountStatus status);
     
     /**
-     * Find account by ID with optimistic lock for update operations.
+     * Find account by ID with pessimistic write lock for financial operations.
+     * This prevents concurrent reads during updates.
      *
      * @param id the account ID
      * @return optional account if found
      */
-    @Lock(LockModeType.OPTIMISTIC)
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT a FROM Account a WHERE a.id = :id")
     Optional<Account> findByIdWithLock(@Param("id") UUID id);
 }

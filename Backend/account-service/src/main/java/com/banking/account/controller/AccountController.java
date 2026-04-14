@@ -74,6 +74,96 @@ public class AccountController {
     }
     
     /**
+     * Creates a new account with userId verification.
+     */
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResponse<AccountResponse> createAccount(
+            @Valid @RequestBody CreateAccountRequest request,
+            @AuthenticationPrincipal UserDetails userDetails) {
+        
+        User currentUser = userRepository.findByUsername(userDetails.getUsername())
+            .orElseThrow(() -> new BankingException("USER_NOT_FOUND", "User not found"));
+        
+        // Verify userId matches current user
+        if (!request.getUserId().equals(currentUser.getId())) {
+            throw new BankingException("FORBIDDEN", "Cannot create account for another user");
+        }
+        
+        Account account = accountService.createAccount(request, userDetails.getUsername());
+        return ApiResponse.success(AccountResponse.from(account));
+    }
+    
+    /**
+     * Freezes an account with ownership verification.
+     */
+    @PutMapping("/{id}/freeze")
+    public ApiResponse<Void> freezeAccount(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal UserDetails userDetails) {
+        Account account = accountService.getAccount(id);
+        verifyAccountOwnership(account, userDetails);
+        accountService.freezeAccount(id);
+        return ApiResponse.success(null);
+    }
+    
+    /**
+     * Unfreezes an account with ownership verification.
+     */
+    @PutMapping("/{id}/unfreeze")
+    public ApiResponse<Void> unfreezeAccount(
+            @PathVariable UUID id,
+            @AuthenticationPrincipal UserDetails userDetails) {
+        Account account = accountService.getAccount(id);
+        verifyAccountOwnership(account, userDetails);
+        accountService.unfreezeAccount(id);
+        return ApiResponse.success(null);
+    }
+    
+    /**
+     * Reserves balance with ownership verification.
+     */
+    @PostMapping("/{id}/reserve")
+    public ApiResponse<ReserveBalanceResponse> reserveBalance(
+            @PathVariable UUID id,
+            @Valid @RequestBody ReserveBalanceRequest request,
+            @AuthenticationPrincipal UserDetails userDetails) {
+        Account account = accountService.getAccount(id);
+        verifyAccountOwnership(account, userDetails);
+        BalanceReservation reservation = balanceService.reserveBalance(id, 
+            request.getTransactionId(), request.getAmount());
+        return ApiResponse.success(ReserveBalanceResponse.from(reservation));
+    }
+    
+    /**
+     * Commits a balance reservation with ownership verification.
+     */
+    @PostMapping("/{id}/commit")
+    public ApiResponse<Void> commitReservation(
+            @PathVariable UUID id,
+            @RequestParam UUID reservationId,
+            @AuthenticationPrincipal UserDetails userDetails) {
+        Account account = accountService.getAccount(id);
+        verifyAccountOwnership(account, userDetails);
+        balanceService.commitReservation(reservationId);
+        return ApiResponse.success(null);
+    }
+    
+    /**
+     * Rolls back a balance reservation with ownership verification.
+     */
+    @PostMapping("/{id}/rollback")
+    public ApiResponse<Void> rollbackReservation(
+            @PathVariable UUID id,
+            @RequestParam UUID reservationId,
+            @AuthenticationPrincipal UserDetails userDetails) {
+        Account account = accountService.getAccount(id);
+        verifyAccountOwnership(account, userDetails);
+        balanceService.rollbackReservation(reservationId);
+        return ApiResponse.success(null);
+    }
+    
+    /**
      * Verifies that the current user owns the account.
      */
     private void verifyAccountOwnership(Account account, UserDetails userDetails) {
@@ -83,72 +173,5 @@ public class AccountController {
                     throw new BankingException("ACCESS_DENIED", "You don't have access to this account");
                 }
             });
-    }
-    
-    /**
-     * Gets account by ID.
-     */
-    @GetMapping("/{id}")
-    public ApiResponse<AccountResponse> getAccount(@PathVariable UUID id) {
-        Account account = accountService.getAccount(id);
-        return ApiResponse.success(AccountResponse.from(account));
-    }
-    
-    /**
-     * Gets account balance.
-     */
-    @GetMapping("/{id}/balance")
-    public ApiResponse<BalanceResponse> getBalance(@PathVariable UUID id) {
-        Account account = accountService.getBalance(id);
-        return ApiResponse.success(BalanceResponse.builder()
-            .accountId(account.getId())
-            .balance(account.getBalance())
-            .reservedBalance(account.getReservedBalance())
-            .availableBalance(account.getAvailableBalance())
-            .currency(account.getCurrency())
-            .build());
-    }
-    
-    /**
-     * Freezes an account.
-     */
-    @PutMapping("/{id}/freeze")
-    public ApiResponse<Void> freezeAccount(@PathVariable UUID id) {
-        accountService.freezeAccount(id);
-        return ApiResponse.success(null);
-    }
-    
-    /**
-     * Reserves balance for a transaction.
-     */
-    @PostMapping("/{id}/reserve")
-    public ApiResponse<ReserveBalanceResponse> reserveBalance(
-            @PathVariable UUID id,
-            @Valid @RequestBody ReserveBalanceRequest request) {
-        BalanceReservation reservation = balanceService.reserveBalance(id, 
-            request.getTransactionId(), request.getAmount());
-        return ApiResponse.success(ReserveBalanceResponse.from(reservation));
-    }
-    
-    /**
-     * Commits a balance reservation.
-     */
-    @PostMapping("/{id}/commit")
-    public ApiResponse<Void> commitReservation(
-            @PathVariable UUID id,
-            @RequestParam UUID reservationId) {
-        balanceService.commitReservation(reservationId);
-        return ApiResponse.success(null);
-    }
-    
-    /**
-     * Rolls back a balance reservation.
-     */
-    @PostMapping("/{id}/rollback")
-    public ApiResponse<Void> rollbackReservation(
-            @PathVariable UUID id,
-            @RequestParam UUID reservationId) {
-        balanceService.rollbackReservation(reservationId);
-        return ApiResponse.success(null);
     }
 }

@@ -3,13 +3,13 @@ package com.banking.auth.dto;
 import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
-import lombok.Data;
+import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 /**
  * DTO for login requests containing user credentials.
  */
-@Data
+@Getter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder

@@ -87,17 +87,46 @@ public class AccountService {
     }
     
     /**
+     * Unfreezes an account, allowing operations to resume.
+     */
+    @Transactional
+    public void unfreezeAccount(UUID accountId) {
+        Account account = accountRepository.findById(accountId)
+            .orElseThrow(() -> new BankingException("ACCOUNT_NOT_FOUND", "Account not found: " + accountId));
+        
+        account.setStatus(Account.AccountStatus.ACTIVE);
+        accountRepository.save(account);
+        
+        eventPublisher.publishAccountStatusChanged(account);
+        log.info("Unfrozen account: {}", accountId);
+    }
+    
+    /**
      * Generates unique account number using cryptographically secure random.
+     * Retries up to 10 times if collision occurs.
      */
     private String generateAccountNumber() {
-        SecureRandom secureRandom = new SecureRandom();
-        byte[] bytes = new byte[8];
-        secureRandom.nextBytes(bytes);
+        String accountNumber;
+        int attempts = 0;
         
-        // Format: ACC + 16 alphanumeric characters
-        String randomPart = new java.math.BigInteger(1, bytes).toString(36).toUpperCase();
-        randomPart = String.format("%016s", randomPart).replace(' ', 'X');
+        do {
+            SecureRandom secureRandom = new SecureRandom();
+            byte[] bytes = new byte[8];
+            secureRandom.nextBytes(bytes);
+            
+            // Format: ACC + 16 alphanumeric characters
+            String randomPart = new java.math.BigInteger(1, bytes).toString(36).toUpperCase();
+            randomPart = String.format("%016s", randomPart).replace(' ', 'X');
+            
+            accountNumber = "ACC" + randomPart;
+            attempts++;
+            
+            if (attempts > 10) {
+                throw new BankingException("ACCOUNT_NUMBER_GENERATION_FAILED",
+                    "Unable to generate unique account number after 10 attempts");
+            }
+        } while (accountRepository.findByAccountNumber(accountNumber).isPresent());
         
-        return "ACC" + randomPart;
+        return accountNumber;
     }
 }
