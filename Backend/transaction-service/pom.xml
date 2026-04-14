@@ -23,6 +23,13 @@
             <artifactId>banking-common</artifactId>
             <version>${project.version}</version>
         </dependency>
+        
+        <!-- Account Service Client (for ownership verification) -->
+        <dependency>
+            <groupId>com.banking</groupId>
+            <artifactId>account-service</artifactId>
+            <version>${project.version}</version>
+        </dependency>
 
         <!-- Spring Boot Web -->
         <dependency>

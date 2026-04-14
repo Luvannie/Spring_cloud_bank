@@ -1,5 +1,6 @@
 package com.banking.transaction.controller;
 
+import com.banking.account.repository.AccountRepository;
 import com.banking.auth.repository.UserRepository;
 import com.banking.common.dto.ApiResponse;
 import com.banking.common.exception.BankingException;
@@ -33,6 +34,7 @@ public class TransferController {
     private final TransactionService transactionService;
     private final UserRepository userRepository;
     private final TransactionRepository transactionRepository;
+    private final AccountRepository accountRepository;
     
     /**
      * Initiate a new transfer with source account ownership verification.
@@ -81,9 +83,17 @@ public class TransferController {
     private void verifySourceAccountOwnership(UUID sourceAccountId, UserDetails userDetails) {
         userRepository.findByUsername(userDetails.getUsername())
             .ifPresent(user -> {
-                // Check if user owns the source account - this would need account-service call
-                // For now, we verify through transaction ownership after creation
-                log.debug("Transfer initiated by user: {} from account: {}", user.getUsername(), sourceAccountId);
+                // Check if user owns the source account
+                var accountOpt = accountRepository.findById(sourceAccountId);
+                if (accountOpt.isEmpty()) {
+                    throw new BankingException("ACCOUNT_NOT_FOUND", "Source account not found: " + sourceAccountId);
+                }
+                
+                var account = accountOpt.get();
+                if (!account.getUserId().equals(user.getId())) {
+                    throw new BankingException("FORBIDDEN", "Cannot transfer from another user's account");
+                }
+                log.debug("Transfer verified: user {} owns account {}", user.getUsername(), sourceAccountId);
             });
     }
     
@@ -96,7 +106,9 @@ public class TransferController {
         
         userRepository.findByUsername(userDetails.getUsername())
             .ifPresent(user -> {
-                if (!transaction.getSourceAccountId().equals(user.getId())) {
+                // Check if user owns the source account of this transaction
+                var accountOpt = accountRepository.findById(transaction.getSourceAccountId());
+                if (accountOpt.isPresent() && !accountOpt.get().getUserId().equals(user.getId())) {
                     throw new BankingException("ACCESS_DENIED", "You don't have access to this transaction");
                 }
             });
