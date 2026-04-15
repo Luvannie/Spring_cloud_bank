@@ -47,7 +47,7 @@
         <springdoc.version>2.3.0</springdoc.version>
         
         <!-- Testing -->
-        <testcontainers.version>1.19.3</testcontainers.version>
+        <testcontainers.version>2.0.4</testcontainers.version>
         <mockito.version>5.8.0</mockito.version>
         
         <!-- Lombok -->
