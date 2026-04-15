@@ -44,7 +44,7 @@
         <jjwt.version>0.12.3</jjwt.version>
         
         <!-- API Documentation -->
-        <springdoc.version>2.3.0</springdoc.version>
+        <springdoc.version>3.0.3</springdoc.version>
         
         <!-- Testing -->
         <testcontainers.version>1.19.3</testcontainers.version>
