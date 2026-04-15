@@ -12,7 +12,6 @@ import com.banking.transaction.repository.SagaStateRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,7 +34,6 @@ public class TransferSaga {
     private final PaymentServiceProxy paymentService;
     private final NotificationServiceProxy notificationService;
     private final SagaStateRepository sagaStateRepository;
-    private final KafkaTemplate<String, Object> kafkaTemplate;
     private final ObjectMapper objectMapper;
     
     private static final String SAGA_TYPE = "TRANSFER_SAGA";
@@ -108,53 +106,60 @@ public class TransferSaga {
             .build();
         
         try {
-            // Execute saga steps
-            executeSagaSteps(sagaId, request, response);
-            
-            // Mark transaction as completed
-            transactionService.markCompleted(transaction.getId());
-            response.setStatus(TransferResponse.TransferStatus.COMPLETED);
-            response.setMessage("Transfer completed successfully");
-            
-            // Update saga state
-            sagaState.setStatus(SagaState.SagaStatus.COMPLETED);
-            sagaState.setCompletedAt(Instant.now());
-            sagaStateRepository.save(sagaState);
-            
+            executeInitialSteps(sagaState, request, response);
+            transactionService.markProcessing(transaction.getId());
+            response.setStatus(TransferResponse.TransferStatus.PROCESSING);
+            response.setMessage("Transfer initiated. Waiting for payment confirmation");
         } catch (Exception e) {
             log.error("Transfer saga failed: {}", sagaId, e);
-            handleSagaFailure(sagaId, request, response, e);
+            handleSagaFailure(sagaId, request, transaction.getId(), response, e);
         }
         
         return response;
     }
     
     /**
-     * Execute all saga steps sequentially.
+     * Execute the synchronous steps before waiting for payment confirmation.
      */
-    private void executeSagaSteps(UUID sagaId, TransferRequest request, TransferResponse response) {
-        SagaState sagaState = sagaStateRepository.findBySagaId(sagaId)
-            .orElseThrow(() -> new com.banking.common.exception.BankingException(
-                "SAGA_NOT_FOUND", "Saga not found"));
-        
-        for (int i = sagaState.getCurrentStep(); i < STEPS.size(); i++) {
-            SagaStep step = STEPS.get(i);
-            log.info("Executing saga step {}: {}", sagaId, step.getStepName());
-            
-            try {
-                executeStep(step, request, response);
-                
-                // Update saga state
-                sagaState.setCurrentStep(i + 1);
-                updateStepsCompleted(sagaState, step, "OK");
-                sagaStateRepository.save(sagaState);
-                
-            } catch (Exception e) {
-                log.error("Saga step {} failed: {}", sagaId, step.getStepName(), e);
-                sagaState.setLastError(e.getMessage());
-                sagaStateRepository.save(sagaState);
-                throw e;
-            }
+    private void executeInitialSteps(SagaState sagaState, TransferRequest request, TransferResponse response) {
+        executeAndPersistStep(sagaState, STEPS.get(0), request, response, "OK");
+        executeAndPersistStep(sagaState, STEPS.get(1), request, response, "OK");
+
+        SagaStep waitForPayment = STEPS.get(2);
+        log.info("Saga {} is waiting for payment confirmation for transaction: {}",
+            sagaState.getSagaId(), response.getTransactionId());
+        sagaState.setCurrentStep(3);
+        updateStepsCompleted(sagaState, waitForPayment, "WAITING_FOR_PAYMENT");
+        sagaStateRepository.save(sagaState);
+    }
+
+    /**
+     * Continue the saga after payment confirmation.
+     */
+    private void executePostPaymentSteps(SagaState sagaState, TransferRequest request, TransferResponse response) {
+        for (int index = sagaState.getCurrentStep(); index < STEPS.size(); index++) {
+            executeAndPersistStep(sagaState, STEPS.get(index), request, response, "OK");
+        }
+    }
+
+    private void executeAndPersistStep(
+            SagaState sagaState,
+            SagaStep step,
+            TransferRequest request,
+            TransferResponse response,
+            String status) {
+        try {
+            log.info("Executing saga step {}: {}", sagaState.getSagaId(), step.getStepName());
+            executeStep(step, request, response);
+            sagaState.setCurrentStep(step.getStepNumber());
+            sagaState.setLastError(null);
+            updateStepsCompleted(sagaState, step, status);
+            sagaStateRepository.save(sagaState);
+        } catch (Exception e) {
+            log.error("Saga step {} failed: {}", sagaState.getSagaId(), step.getStepName(), e);
+            sagaState.setLastError(e.getMessage());
+            sagaStateRepository.save(sagaState);
+            throw e;
         }
     }
     
@@ -199,64 +204,76 @@ public class TransferSaga {
         Transaction transaction = transactionService.findById(transactionId)
             .orElseThrow(() -> new com.banking.common.exception.BankingException(
                 "TRANSACTION_NOT_FOUND", "Transaction not found"));
-        
-        if (transaction.getStatus() == Transaction.TransactionStatus.PROCESSING) {
-            // Continue saga from step 4 (CONFIRM_TRANSFER)
-            executeStepAfterPayment(transaction);
+
+        if (transaction.getStatus() != Transaction.TransactionStatus.PROCESSING) {
+            log.info("Ignoring payment success for transaction {} in status {}",
+                transactionId, transaction.getStatus());
+            return;
         }
-    }
-    
-    /**
-     * Execute remaining steps after payment confirmation.
-     */
-    private void executeStepAfterPayment(Transaction transaction) {
-        SagaState sagaState = transaction.getSagaId() != null
-            ? sagaStateRepository.findBySagaId(transaction.getSagaId()).orElse(null)
-            : null;
-        
-        if (sagaState != null) {
-            // Execute remaining steps
-            TransferRequest request = fromJson(sagaState.getPayload(), TransferRequest.class);
-            TransferResponse response = TransferResponse.builder()
-                .transactionId(transaction.getId())
-                .sagaId(transaction.getSagaId())
-                .amount(request.getAmount())
-                .build();
-            
-            // Execute step 4 (CONFIRM_TRANSFER)
-            accountService.commitReservation(
-                request.getSourceAccountId(), transaction.getId());
-            
-            // Execute step 5 (SEND_NOTIFICATIONS)
-            notificationService.sendTransferConfirmation(request, response);
-            
-            // Complete saga
+
+        SagaState sagaState = requireSagaState(transaction.getSagaId());
+        TransferRequest request = fromJson(sagaState.getPayload(), TransferRequest.class);
+        TransferResponse response = buildResponse(transaction, request);
+
+        try {
+            executePostPaymentSteps(sagaState, request, response);
             transactionService.markCompleted(transaction.getId());
             sagaState.setStatus(SagaState.SagaStatus.COMPLETED);
             sagaState.setCompletedAt(Instant.now());
             sagaStateRepository.save(sagaState);
+            log.info("Transfer saga {} completed after payment success", sagaState.getSagaId());
+        } catch (Exception e) {
+            handleSagaFailure(sagaState.getSagaId(), request, transactionId, response, e);
         }
+    }
+    
+    /**
+     * Handle payment failure or expiration by compensating the saga.
+     */
+    @Transactional
+    public void handlePaymentFailure(UUID transactionId, String reason) {
+        log.warn("Payment failed for transaction {}: {}", transactionId, reason);
+
+        Transaction transaction = transactionService.findById(transactionId)
+            .orElseThrow(() -> new com.banking.common.exception.BankingException(
+                "TRANSACTION_NOT_FOUND", "Transaction not found"));
+
+        if (transaction.getStatus() == Transaction.TransactionStatus.COMPLETED
+                || transaction.getStatus() == Transaction.TransactionStatus.FAILED
+                || transaction.getStatus() == Transaction.TransactionStatus.CANCELLED) {
+            log.info("Ignoring payment failure for transaction {} in terminal status {}",
+                transactionId, transaction.getStatus());
+            return;
+        }
+
+        SagaState sagaState = requireSagaState(transaction.getSagaId());
+        TransferRequest request = fromJson(sagaState.getPayload(), TransferRequest.class);
+        TransferResponse response = buildResponse(transaction, request);
+        handleSagaFailure(sagaState.getSagaId(), request, transactionId, response,
+            new IllegalStateException("Payment failed: " + reason));
     }
     
     /**
      * Handle saga failure and execute compensation.
      */
-    private void handleSagaFailure(UUID sagaId, TransferRequest request,
+    private void handleSagaFailure(UUID sagaId, TransferRequest request, UUID transactionId,
                                    TransferResponse response, Exception e) {
         SagaState sagaState = sagaStateRepository.findBySagaId(sagaId).orElse(null);
         
         if (sagaState != null) {
             sagaState.setStatus(SagaState.SagaStatus.COMPENSATING);
+            sagaState.setLastError(e.getMessage());
             sagaStateRepository.save(sagaState);
             
             // Execute compensation actions in reverse order
-            compensate(sagaId, request);
+            compensate(sagaId, request, transactionId);
             
             sagaState.setStatus(SagaState.SagaStatus.FAILED);
             sagaStateRepository.save(sagaState);
         }
         
-        transactionService.markFailed(response.getTransactionId(), e.getMessage());
+        transactionService.markFailed(transactionId, e.getMessage());
+        notificationService.sendCompensationNotification(request, e.getMessage());
         response.setStatus(TransferResponse.TransferStatus.FAILED);
         response.setMessage("Transfer failed: " + e.getMessage());
     }
@@ -264,7 +281,7 @@ public class TransferSaga {
     /**
      * Execute compensation actions in reverse order.
      */
-    private void compensate(UUID sagaId, TransferRequest request) {
+    private void compensate(UUID sagaId, TransferRequest request, UUID transactionId) {
         log.info("Executing compensation for saga: {}", sagaId);
         
         SagaState sagaState = sagaStateRepository.findBySagaId(sagaId)
@@ -280,7 +297,7 @@ public class TransferSaga {
             String stepName = (String) step.get("stepName");
             
             try {
-                executeCompensation(stepName, request);
+                executeCompensation(stepName, request, transactionId);
                 log.info("Compensation successful for step: {} in saga: {}", stepName, sagaId);
             } catch (Exception e) {
                 log.error("Compensation failed for step: {} in saga: {}", stepName, sagaId, e);
@@ -314,24 +331,24 @@ public class TransferSaga {
     /**
      * Execute compensation for a specific step.
      */
-    private void executeCompensation(String stepName, TransferRequest request) {
+    private void executeCompensation(String stepName, TransferRequest request, UUID transactionId) {
         switch (stepName) {
             case "RESERVE_BALANCE" -> {
                 // Rollback the balance reservation
                 log.info("Compensating RESERVE_BALANCE - releasing reserved balance");
                 accountService.rollbackReservation(
                     request.getSourceAccountId(), 
-                    request.getTransactionId());
+                    transactionId);
             }
             case "CREATE_PAYMENT_LINK", "WAIT_FOR_PAYMENT" -> {
                 // Cancel the payment
                 log.info("Compensating {} - canceling payment", stepName);
-                paymentService.cancelPayment(request.getTransactionId());
+                paymentService.cancelPayment(transactionId);
             }
             case "CONFIRM_TRANSFER" -> {
                 // For confirmed transfers, this may require manual review
                 log.warn("CONFIRM_TRANSFER compensation may require manual intervention for transaction: {}", 
-                    request.getTransactionId());
+                    transactionId);
                 // In production, this would trigger an alert for manual reconciliation
             }
             case "SEND_NOTIFICATIONS" -> {
@@ -339,6 +356,22 @@ public class TransferSaga {
                 log.debug("No compensation needed for SEND_NOTIFICATIONS step");
             }
         }
+    }
+
+    private SagaState requireSagaState(UUID sagaId) {
+        return sagaStateRepository.findBySagaId(sagaId)
+            .orElseThrow(() -> new com.banking.common.exception.BankingException(
+                "SAGA_NOT_FOUND", "Saga not found"));
+    }
+
+    private TransferResponse buildResponse(Transaction transaction, TransferRequest request) {
+        return TransferResponse.builder()
+            .transactionId(transaction.getId())
+            .sagaId(transaction.getSagaId())
+            .referenceNumber(transaction.getReferenceNumber())
+            .status(TransferResponse.TransferStatus.PROCESSING)
+            .amount(request.getAmount())
+            .build();
     }
     
     /**

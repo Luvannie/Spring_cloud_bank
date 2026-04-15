@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react'
 import { transactionApi } from '@/api'
-import type { Transaction, TransferRequest, PaginatedResponse } from '@/types'
+import type { Transaction, TransferRequest, TransferResponse, PaginatedResponse } from '@/types'
 
 interface UseTransactionsReturn {
   transactions: Transaction[]
@@ -10,8 +10,8 @@ interface UseTransactionsReturn {
   currentPage: number
   fetchTransactions: (page?: number) => Promise<void>
   getTransaction: (id: string) => Promise<Transaction>
-  initiateTransfer: (data: TransferRequest) => Promise<Transaction>
-  getTransactionStatus: (id: string) => Promise<{ status: string; sagaId: string }>
+  initiateTransfer: (data: TransferRequest) => Promise<TransferResponse>
+  getTransactionStatus: (id: string) => Promise<TransferResponse>
 }
 
 export function useTransactions(): UseTransactionsReturn {
@@ -40,10 +40,8 @@ export function useTransactions(): UseTransactionsReturn {
     return transactionApi.getById(id)
   }, [])
 
-  const initiateTransfer = useCallback(async (data: TransferRequest): Promise<Transaction> => {
-    const transaction = await transactionApi.initiateTransfer(data)
-    setTransactions((prev) => [transaction, ...prev])
-    return transaction
+  const initiateTransfer = useCallback(async (data: TransferRequest): Promise<TransferResponse> => {
+    return transactionApi.initiateTransfer(data)
   }, [])
 
   const getTransactionStatus = useCallback(async (id: string) => {

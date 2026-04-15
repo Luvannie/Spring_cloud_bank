@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.security.SecureRandom;
 import java.util.UUID;
 
@@ -70,6 +71,14 @@ public class AccountService {
             .orElseThrow(() -> new BankingException("ACCOUNT_NOT_FOUND", "Account not found: " + accountId));
         return account;
     }
+
+    /**
+     * Gets all accounts belonging to a user.
+     */
+    @Transactional(readOnly = true)
+    public List<Account> getAccountsForUser(UUID userId) {
+        return accountRepository.findByUserId(userId);
+    }
     
     /**
      * Freezes an account, preventing all operations.
@@ -116,7 +125,7 @@ public class AccountService {
             
             // Format: ACC + 16 alphanumeric characters
             String randomPart = new java.math.BigInteger(1, bytes).toString(36).toUpperCase();
-            randomPart = String.format("%016s", randomPart).replace(' ', 'X');
+            randomPart = String.format("%16s", randomPart).replace(' ', 'X');
             
             accountNumber = "ACC" + randomPart;
             attempts++;

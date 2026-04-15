@@ -9,8 +9,8 @@ interface UseAccountsReturn {
   fetchAccounts: () => Promise<void>
   getAccount: (id: string) => Promise<Account>
   createAccount: (data: CreateAccountRequest) => Promise<Account>
-  freezeAccount: (id: string) => Promise<Account>
-  unfreezeAccount: (id: string) => Promise<Account>
+  freezeAccount: (id: string) => Promise<void>
+  unfreezeAccount: (id: string) => Promise<void>
 }
 
 export function useAccounts(): UseAccountsReturn {
@@ -22,10 +22,8 @@ export function useAccounts(): UseAccountsReturn {
     setIsLoading(true)
     setError(null)
     try {
-      // TODO: Add paginated API call when available
-      // For now, we'll get accounts from user profile
-      const response = await accountApi.getById('current')
-      setAccounts([response])
+      const response = await accountApi.listMine()
+      setAccounts(response)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch accounts')
     } finally {
@@ -43,16 +41,18 @@ export function useAccounts(): UseAccountsReturn {
     return account
   }, [])
 
-  const freezeAccount = useCallback(async (id: string): Promise<Account> => {
-    const account = await accountApi.freeze(id)
-    setAccounts((prev) => prev.map((a) => (a.id === id ? account : a)))
-    return account
+  const freezeAccount = useCallback(async (id: string): Promise<void> => {
+    await accountApi.freeze(id)
+    setAccounts((prev) => prev.map((a) => (
+      a.id === id ? { ...a, status: 'FROZEN' } : a
+    )))
   }, [])
 
-  const unfreezeAccount = useCallback(async (id: string): Promise<Account> => {
-    const account = await accountApi.unfreeze(id)
-    setAccounts((prev) => prev.map((a) => (a.id === id ? account : a)))
-    return account
+  const unfreezeAccount = useCallback(async (id: string): Promise<void> => {
+    await accountApi.unfreeze(id)
+    setAccounts((prev) => prev.map((a) => (
+      a.id === id ? { ...a, status: 'ACTIVE' } : a
+    )))
   }, [])
 
   return {

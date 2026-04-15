@@ -56,6 +56,11 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
      * @return page of transactions
      */
     Page<Transaction> findBySourceAccountIdOrderByCreatedAtDesc(UUID sourceAccountId, Pageable pageable);
+
+    /**
+     * Find transactions for multiple source accounts with pagination.
+     */
+    Page<Transaction> findBySourceAccountIdInOrderByCreatedAtDesc(List<UUID> sourceAccountIds, Pageable pageable);
     
     /**
      * Find all transactions with any of the specified statuses.

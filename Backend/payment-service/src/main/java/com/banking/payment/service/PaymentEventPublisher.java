@@ -30,7 +30,7 @@ public class PaymentEventPublisher {
             "eventId", UUID.randomUUID().toString(),
             "paymentId", payment.getId(),
             "transactionId", payment.getTransactionId(),
-            "status", status,
+            "status", status.name(),
             "payosOrderCode", payment.getPayosOrderCode(),
             "amount", payment.getAmount(),
             "timestamp", Instant.now()

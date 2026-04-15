@@ -7,6 +7,7 @@ import com.banking.account.dto.ReserveBalanceRequest;
 import com.banking.account.dto.ReserveBalanceResponse;
 import com.banking.account.entity.Account;
 import com.banking.account.entity.BalanceReservation;
+import com.banking.auth.entity.User;
 import com.banking.account.service.AccountService;
 import com.banking.account.service.BalanceService;
 import com.banking.auth.repository.UserRepository;
@@ -28,6 +29,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -42,6 +44,20 @@ public class AccountController {
     private final AccountService accountService;
     private final BalanceService balanceService;
     private final UserRepository userRepository;
+
+    /**
+     * Lists accounts owned by the current user.
+     */
+    @GetMapping
+    public ApiResponse<List<AccountResponse>> getCurrentUserAccounts(
+            @AuthenticationPrincipal UserDetails userDetails) {
+        User currentUser = getCurrentUser(userDetails);
+        List<AccountResponse> accounts = accountService.getAccountsForUser(currentUser.getId())
+            .stream()
+            .map(AccountResponse::from)
+            .toList();
+        return ApiResponse.success(accounts);
+    }
     
     /**
      * Gets account by ID with ownership verification.
@@ -167,11 +183,14 @@ public class AccountController {
      * Verifies that the current user owns the account.
      */
     private void verifyAccountOwnership(Account account, UserDetails userDetails) {
-        userRepository.findByUsername(userDetails.getUsername())
-            .ifPresent(user -> {
-                if (!account.getUserId().equals(user.getId())) {
-                    throw new BankingException("ACCESS_DENIED", "You don't have access to this account");
-                }
-            });
+        User currentUser = getCurrentUser(userDetails);
+        if (!account.getUserId().equals(currentUser.getId())) {
+            throw new BankingException("ACCESS_DENIED", "You don't have access to this account");
+        }
+    }
+
+    private User getCurrentUser(UserDetails userDetails) {
+        return userRepository.findByUsername(userDetails.getUsername())
+            .orElseThrow(() -> new BankingException("USER_NOT_FOUND", "User not found"));
     }
 }

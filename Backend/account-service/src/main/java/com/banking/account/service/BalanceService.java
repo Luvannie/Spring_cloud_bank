@@ -24,6 +24,9 @@ import java.util.UUID;
 @RequiredArgsConstructor
 @Slf4j
 public class BalanceService {
+
+    private static final BigDecimal DEFAULT_DAILY_TRANSFER_LIMIT = new BigDecimal("100000000");
+    private static final BigDecimal ZERO = BigDecimal.ZERO;
     
     private final AccountRepository accountRepository;
     private final BalanceReservationRepository reservationRepository;
@@ -45,8 +48,8 @@ public class BalanceService {
         }
         
         // Check daily transfer limit
-        BigDecimal remainingLimit = account.getDailyTransferLimit()
-            .subtract(account.getDailyTransferUsed());
+        BigDecimal remainingLimit = getDailyTransferLimit(account)
+            .subtract(getDailyTransferUsed(account));
         
         if (amount.compareTo(remainingLimit) > 0) {
             throw new BankingException("DAILY_LIMIT_EXCEEDED",
@@ -61,8 +64,8 @@ public class BalanceService {
         }
         
         // Reserve balance
-        account.setReservedBalance(account.getReservedBalance().add(amount));
-        account.setDailyTransferUsed(account.getDailyTransferUsed().add(amount));
+        account.setReservedBalance(getReservedBalance(account).add(amount));
+        account.setDailyTransferUsed(getDailyTransferUsed(account).add(amount));
         accountRepository.save(account);
         
         // Create reservation record
@@ -106,7 +109,7 @@ public class BalanceService {
         }
         
         // Move from reserved to actual balance deduction
-        account.setReservedBalance(account.getReservedBalance().subtract(reservation.getAmount()));
+        account.setReservedBalance(getReservedBalance(account).subtract(reservation.getAmount()));
         account.setBalance(account.getBalance().subtract(reservation.getAmount()));
         accountRepository.save(account);
         
@@ -144,9 +147,9 @@ public class BalanceService {
         }
         
         // Release reserved balance
-        account.setReservedBalance(account.getReservedBalance().subtract(reservation.getAmount()));
+        account.setReservedBalance(getReservedBalance(account).subtract(reservation.getAmount()));
         // Restore daily transfer used
-        account.setDailyTransferUsed(account.getDailyTransferUsed().subtract(reservation.getAmount()));
+        account.setDailyTransferUsed(getDailyTransferUsed(account).subtract(reservation.getAmount()));
         accountRepository.save(account);
         
         // Update reservation status
@@ -159,5 +162,23 @@ public class BalanceService {
             account.getBalance(), "Balance released");
         
         log.info("Rolled back reservation: {} for account: {}", reservationId, account.getId());
+    }
+
+    private BigDecimal getDailyTransferLimit(Account account) {
+        return account.getDailyTransferLimit() != null
+            ? account.getDailyTransferLimit()
+            : DEFAULT_DAILY_TRANSFER_LIMIT;
+    }
+
+    private BigDecimal getDailyTransferUsed(Account account) {
+        return account.getDailyTransferUsed() != null
+            ? account.getDailyTransferUsed()
+            : ZERO;
+    }
+
+    private BigDecimal getReservedBalance(Account account) {
+        return account.getReservedBalance() != null
+            ? account.getReservedBalance()
+            : ZERO;
     }
 }

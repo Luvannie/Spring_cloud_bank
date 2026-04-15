@@ -27,18 +27,26 @@ public class PaymentEventConsumer {
      */
     @KafkaListener(topics = "payment.events", groupId = "transaction-service-group")
     public void consume(Map<String, Object> event) {
-        String status = (String) event.get("status");
-        UUID transactionId = (UUID) event.get("transactionId");
+        String status = String.valueOf(event.get("status"));
+        UUID transactionId = toUuid(event.get("transactionId"));
         
         log.info("Received payment event: {} for transaction: {}", status, transactionId);
         
         if ("SUCCESS".equals(status)) {
-            UUID paymentId = (UUID) event.get("paymentId");
+            UUID paymentId = toUuid(event.get("paymentId"));
             transferSaga.handlePaymentSuccess(transactionId, paymentId);
         } else if ("FAILED".equals(status) || "EXPIRED".equals(status)) {
-            // Handle payment failure - trigger saga compensation
             log.warn("Payment {} for transaction: {}, triggering compensation",
                 status, transactionId);
+            transferSaga.handlePaymentFailure(transactionId, status);
         }
+    }
+
+    private UUID toUuid(Object rawValue) {
+        if (rawValue instanceof UUID uuid) {
+            return uuid;
+        }
+
+        return UUID.fromString(String.valueOf(rawValue));
     }
 }

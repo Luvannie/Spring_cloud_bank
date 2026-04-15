@@ -31,9 +31,10 @@ export function PaymentsPage() {
       
       // Mock response
       setPaymentLink({
-        orderId: `ORD-${Date.now()}`,
+        paymentId: `PAY-${Date.now()}`,
         checkoutUrl: 'https://pay.payos.vn/checkout/abc123',
-        qrCode: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+        qrCodeUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+        expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
       })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create payment link')
@@ -126,10 +127,10 @@ export function PaymentsPage() {
                   </div>
                 </div>
 
-                {/* Order ID */}
+                {/* Payment ID */}
                 <div className="p-3 bg-gray-50 rounded-lg">
-                  <p className="text-sm text-gray-500">Order ID</p>
-                  <p className="font-mono font-medium">{paymentLink.orderId}</p>
+                  <p className="text-sm text-gray-500">Payment ID</p>
+                  <p className="font-mono font-medium">{paymentLink.paymentId}</p>
                 </div>
 
                 {/* Checkout URL */}

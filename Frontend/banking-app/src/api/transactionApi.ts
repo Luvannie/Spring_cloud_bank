@@ -1,9 +1,17 @@
 import { axiosInstance } from './axios'
-import type { Transaction, TransferRequest, PaginatedResponse } from '@/types'
+import type { Transaction, TransferRequest, TransferResponse, PaginatedResponse } from '@/types'
+
+interface BackendPageResponse<T> {
+  content: T[]
+  pageNumber: number
+  pageSize: number
+  totalElements: number
+  totalPages: number
+}
 
 export const transactionApi = {
-  initiateTransfer: async (data: TransferRequest): Promise<Transaction> => {
-    const response = await axiosInstance.post<Transaction>('/api/v1/transfers', data)
+  initiateTransfer: async (data: TransferRequest): Promise<TransferResponse> => {
+    const response = await axiosInstance.post<TransferResponse>('/api/v1/transfers', data)
     return response.data
   },
 
@@ -17,17 +25,23 @@ export const transactionApi = {
     size = 20,
     status?: string
   ): Promise<PaginatedResponse<Transaction>> => {
-    const response = await axiosInstance.get<PaginatedResponse<Transaction>>(
+    const response = await axiosInstance.get<BackendPageResponse<Transaction>>(
       '/api/v1/transactions',
       {
         params: { page, size, status },
       }
     )
-    return response.data
+    return {
+      content: response.data.content,
+      totalElements: response.data.totalElements,
+      totalPages: response.data.totalPages,
+      page: response.data.pageNumber,
+      size: response.data.pageSize,
+    }
   },
 
-  getStatus: async (id: string): Promise<{ status: string; sagaId: string }> => {
-    const response = await axiosInstance.get(`/api/v1/transactions/${id}/status`)
+  getStatus: async (id: string): Promise<TransferResponse> => {
+    const response = await axiosInstance.get<TransferResponse>(`/api/v1/transfers/${id}/status`)
     return response.data
   },
 }

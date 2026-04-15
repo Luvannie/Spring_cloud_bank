@@ -2,6 +2,7 @@ package com.banking.payment.controller;
 
 import com.banking.payment.dto.WebhookPayload;
 import com.banking.payment.service.PayOSService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -25,7 +26,7 @@ public class PaymentWebhookController {
      * Receives and processes PayOS webhook payloads.
      */
     @PostMapping("/webhook")
-    public ResponseEntity<String> handleWebhook(@RequestBody WebhookPayload payload) {
+    public ResponseEntity<String> handleWebhook(@Valid @RequestBody WebhookPayload payload) {
         log.info("Received PayOS webhook for order: {}", payload.getOrderCode());
         try {
             payOSService.processWebhook(payload);

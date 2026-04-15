@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { getAccessToken, clearTokens } from '@/utils/tokenStorage'
+import { getAccessToken, getTokens, clearTokens, setTokens } from '@/utils/tokenStorage'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
 
@@ -15,6 +15,19 @@ export const axiosInstance = axios.create({
   timeoutErrorMessage: 'Request timed out. Please try again.',
 })
 
+function unwrapApiResponse<T>(payload: unknown): T {
+  if (
+    payload &&
+    typeof payload === 'object' &&
+    'success' in payload &&
+    'data' in payload
+  ) {
+    return (payload as { data: T }).data
+  }
+
+  return payload as T
+}
+
 // Request interceptor - add auth token
 axiosInstance.interceptors.request.use(
   async (config) => {
@@ -29,25 +42,34 @@ axiosInstance.interceptors.request.use(
 
 // Response interceptor - handle token refresh
 axiosInstance.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    response.data = unwrapApiResponse(response.data)
+    return response
+  },
   async (error) => {
     const originalRequest = error.config
 
     // If 401 and not already retrying
-    if (error.response?.status === 401 && !originalRequest._retry) {
+    if (
+      error.response?.status === 401 &&
+      !originalRequest?._retry &&
+      !String(originalRequest?.url || '').includes('/api/v1/auth/refresh')
+    ) {
       originalRequest._retry = true
 
       try {
-        const refreshToken = localStorage.getItem('refreshToken')
+        const { refreshToken } = await getTokens()
         if (refreshToken) {
           const response = await axios.post(`${API_BASE_URL}/api/v1/auth/refresh`, {
             refreshToken,
           })
 
-          const { accessToken } = response.data
-          // Re-encrypt the new tokens
-          const { setTokens } = await import('@/utils/tokenStorage')
-          await setTokens(accessToken, refreshToken)
+          const { accessToken, refreshToken: nextRefreshToken } = unwrapApiResponse<{
+            accessToken: string
+            refreshToken: string
+          }>(response.data)
+
+          await setTokens(accessToken, nextRefreshToken)
 
           originalRequest.headers.Authorization = `Bearer ${accessToken}`
           return axiosInstance(originalRequest)

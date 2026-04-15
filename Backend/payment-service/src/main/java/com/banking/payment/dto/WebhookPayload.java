@@ -1,5 +1,6 @@
 package com.banking.payment.dto;
 
+import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -15,11 +16,18 @@ import java.time.Instant;
 @AllArgsConstructor
 @Builder
 public class WebhookPayload {
-    
+
+    @NotBlank
     private String orderCode;
+
+    @NotBlank
     private String amount;
+
+    @NotBlank
     private String status;
     private String transactionId;
+
+    @NotBlank
     private String signature;
     private Instant paidAt;
 }

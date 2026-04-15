@@ -93,14 +93,23 @@ public class TransferService {
      */
     public TransferResponse getTransferStatus(UUID transactionId) {
         TransactionResponse txnResponse = transactionService.getTransactionResponse(transactionId);
+        TransferResponse.TransferStatus status = mapTransactionStatus(txnResponse.getStatus());
         return TransferResponse.builder()
             .transactionId(txnResponse.getId())
             .sagaId(txnResponse.getSagaId())
             .referenceNumber(txnResponse.getReferenceNumber())
-            .status(TransferResponse.TransferStatus.PROCESSING)
+            .status(status)
             .amount(txnResponse.getAmount())
-            .message("Transfer is being processed")
+            .message(getTransferStatusMessage(status))
             .build();
+    }
+
+    private String getTransferStatusMessage(TransferResponse.TransferStatus status) {
+        return switch (status) {
+            case COMPLETED -> "Transfer completed successfully";
+            case FAILED -> "Transfer failed";
+            case PROCESSING, PENDING -> "Transfer is being processed";
+        };
     }
     
     /**

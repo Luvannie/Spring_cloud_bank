@@ -3,7 +3,7 @@ export interface User {
   id: string
   username: string
   email: string
-  status: 'ACTIVE' | 'FROZEN' | 'CLOSED'
+  status: 'ACTIVE' | 'INACTIVE' | 'LOCKED' | 'SUSPENDED'
   createdAt: string
 }
 
@@ -32,7 +32,6 @@ export type CurrencyCode = 'VND' | 'USD' | 'EUR'
 
 export interface Account {
   id: string
-  userId: string
   accountNumber: string
   accountType: AccountType
   balance: number
@@ -41,7 +40,7 @@ export interface Account {
   currency: CurrencyCode
   status: AccountStatus
   createdAt: string
-  updatedAt: string
+  updatedAt?: string
 }
 
 export interface CreateAccountRequest {
@@ -74,6 +73,15 @@ export interface Transaction {
   processedAt: string | null
 }
 
+export interface TransferResponse {
+  transactionId: string
+  sagaId: string
+  referenceNumber: string
+  status: 'PENDING' | 'PROCESSING' | 'COMPLETED' | 'FAILED'
+  amount: number
+  message: string
+}
+
 export interface TransferRequest {
   sourceAccountId: string
   targetAccountNumber: string
@@ -89,7 +97,7 @@ export type PaymentStatus = 'PENDING' | 'SUCCESS' | 'FAILED' | 'EXPIRED' | 'CANC
 export interface Payment {
   id: string
   transactionId: string
-  payosOrderId: string
+  payosOrderCode: string
   payosTransactionId: string | null
   amount: number
   status: PaymentStatus
@@ -107,9 +115,10 @@ export interface PaymentLinkRequest {
 }
 
 export interface PaymentLinkResponse {
+  paymentId: string
   checkoutUrl: string
-  qrCode: string
-  orderId: string
+  qrCodeUrl: string
+  expiresAt: string
 }
 
 // API Response Types
@@ -137,12 +146,10 @@ export interface ReserveBalanceRequest {
 
 export interface CommitBalanceRequest {
   accountId: string
-  transactionId: string
-  amount: number
+  reservationId: string
 }
 
 export interface RollbackBalanceRequest {
   accountId: string
-  transactionId: string
-  amount: number
+  reservationId: string
 }

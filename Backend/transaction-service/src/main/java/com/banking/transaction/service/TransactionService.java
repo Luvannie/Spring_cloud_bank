@@ -1,6 +1,8 @@
 package com.banking.transaction.service;
 
 import com.banking.common.exception.BankingException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import com.banking.transaction.dto.TransactionResponse;
 import com.banking.transaction.entity.SagaState;
 import com.banking.transaction.entity.Transaction;
@@ -156,6 +158,14 @@ public class TransactionService {
      */
     public Optional<Transaction> findByReferenceNumber(String referenceNumber) {
         return transactionRepository.findByReferenceNumber(referenceNumber);
+    }
+
+    /**
+     * Gets paginated transactions for a set of source accounts.
+     */
+    public Page<TransactionResponse> getTransactionsForSourceAccounts(List<UUID> sourceAccountIds, Pageable pageable) {
+        return transactionRepository.findBySourceAccountIdInOrderByCreatedAtDesc(sourceAccountIds, pageable)
+            .map(TransactionResponse::from);
     }
     
     /**

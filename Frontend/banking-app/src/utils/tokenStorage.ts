@@ -3,8 +3,6 @@
  * Uses AES encryption for tokens stored in localStorage.
  */
 
-const TOKEN_KEY = 'banking_tokens';
-
 /**
  * Encrypts a string using AES encryption.
  */
