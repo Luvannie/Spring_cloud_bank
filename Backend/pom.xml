@@ -48,7 +48,7 @@
         
         <!-- Testing -->
         <testcontainers.version>1.19.3</testcontainers.version>
-        <mockito.version>5.8.0</mockito.version>
+        <mockito.version>5.23.0</mockito.version>
         
         <!-- Lombok -->
         <lombok.version>1.18.30</lombok.version>
